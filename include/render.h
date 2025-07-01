@@ -8,6 +8,7 @@
 
 bool is_format_supported(enum wl_shm_format fmt);
 uint32_t get_format_min_stride(enum wl_shm_format fmt, uint32_t width);
+pixman_format_code_t get_pixman_format(enum wl_shm_format fmt);
 
 pixman_image_t *render(struct grim_state *state, struct grim_box *geometry,
 	double scale);

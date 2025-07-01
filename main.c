@@ -673,13 +673,14 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	size_t n_pending = 0;
-	struct grim_output *output;
-	wl_list_for_each(output, &state.outputs, link) {
-		if (geometry != NULL &&
-				!intersect_box(geometry, &output->logical_geometry)) {
-			continue;
-		}
+        size_t n_pending = 0;
+        struct grim_output *captured_output = NULL;
+        struct grim_output *output;
+        wl_list_for_each(output, &state.outputs, link) {
+                if (geometry != NULL &&
+                                !intersect_box(geometry, &output->logical_geometry)) {
+                        continue;
+                }
 		if (use_greatest_scale && output->logical_scale > scale) {
 			scale = output->logical_scale;
 		}
@@ -696,15 +697,21 @@ int main(int argc, char *argv[]) {
 			ext_image_copy_capture_session_v1_add_listener(output->ext_image_copy_capture_session,
 				&ext_image_copy_capture_session_listener, output);
 			ext_image_capture_source_v1_destroy(source);
-		} else {
-			output->screencopy_frame = zwlr_screencopy_manager_v1_capture_output(
-				state.screencopy_manager, with_cursor, output->wl_output);
-			zwlr_screencopy_frame_v1_add_listener(output->screencopy_frame,
-				&screencopy_frame_listener, output);
-		}
+                } else {
+                        output->screencopy_frame = zwlr_screencopy_manager_v1_capture_output(
+                                state.screencopy_manager, with_cursor, output->wl_output);
+                        zwlr_screencopy_frame_v1_add_listener(output->screencopy_frame,
+                                &screencopy_frame_listener, output);
+                }
 
-		++n_pending;
-	}
+                if (captured_output == NULL) {
+                        captured_output = output;
+                } else {
+                        captured_output = NULL; // more than one output
+                }
+
+                ++n_pending;
+        }
 
 	if (n_pending == 0) {
 		fprintf(stderr, "supplied geometry did not intersect with any outputs\n");
@@ -725,10 +732,27 @@ int main(int argc, char *argv[]) {
 		get_output_layout_extents(&state, geometry);
 	}
 
-	pixman_image_t *image = render(&state, geometry, scale);
-	if (image == NULL) {
-		return EXIT_FAILURE;
-	}
+        pixman_image_t *image = NULL;
+        bool single_raw = false;
+        if (captured_output != NULL &&
+                        geometry->x == captured_output->logical_geometry.x &&
+                        geometry->y == captured_output->logical_geometry.y &&
+                        geometry->width == captured_output->logical_geometry.width &&
+                        geometry->height == captured_output->logical_geometry.height) {
+                single_raw = true;
+        }
+
+        if (single_raw) {
+                struct grim_buffer *buffer = captured_output->buffer;
+                pixman_format_code_t pixman_fmt = get_pixman_format(buffer->format);
+                image = pixman_image_create_bits(pixman_fmt, buffer->width, buffer->height,
+                        buffer->data, buffer->stride);
+        } else {
+                image = render(&state, geometry, scale);
+        }
+        if (image == NULL) {
+                return EXIT_FAILURE;
+        }
 
 	FILE *file;
 	if (strcmp(output_filename, "-") == 0) {
