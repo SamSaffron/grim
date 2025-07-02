@@ -141,8 +141,40 @@ static void compute_composite_region(const struct pixman_f_transform *out2com,
 }
 
 pixman_image_t *render(struct grim_state *state, struct grim_box *geometry,
-		double scale) {
-	int common_width = geometry->width * scale;
+                double scale) {
+       struct grim_output *single_output = NULL;
+       size_t n_outputs = 0;
+       struct grim_output *tmp_output;
+       wl_list_for_each(tmp_output, &state->outputs, link) {
+               if (tmp_output->buffer == NULL) {
+                       continue;
+               }
+               single_output = tmp_output;
+               n_outputs++;
+       }
+
+       if (n_outputs == 1 &&
+                       geometry->x == single_output->logical_geometry.x &&
+                       geometry->y == single_output->logical_geometry.y &&
+                       geometry->width == single_output->logical_geometry.width &&
+                       geometry->height == single_output->logical_geometry.height) {
+               struct grim_buffer *buffer = single_output->buffer;
+               pixman_format_code_t pixman_fmt = get_pixman_format(buffer->format);
+               if (!pixman_fmt) {
+                       fprintf(stderr, "unsupported format %d = 0x%08x\n",
+                               buffer->format, buffer->format);
+                       return NULL;
+               }
+               pixman_image_t *image = pixman_image_create_bits(pixman_fmt,
+                       buffer->width, buffer->height, buffer->data, buffer->stride);
+               if (!image) {
+                       fprintf(stderr, "Failed to create image\n");
+                       return NULL;
+               }
+               return image;
+       }
+
+       int common_width = geometry->width * scale;
 	int common_height = geometry->height * scale;
 	pixman_image_t *common_image = pixman_image_create_bits(PIXMAN_a8r8g8b8,
 		common_width, common_height, NULL, 0);
