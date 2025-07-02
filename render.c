@@ -141,19 +141,52 @@ static void compute_composite_region(const struct pixman_f_transform *out2com,
 }
 
 pixman_image_t *render(struct grim_state *state, struct grim_box *geometry,
-		double scale) {
-	int common_width = geometry->width * scale;
-	int common_height = geometry->height * scale;
-	pixman_image_t *common_image = pixman_image_create_bits(PIXMAN_a8r8g8b8,
-		common_width, common_height, NULL, 0);
-	if (!common_image) {
-		fprintf(stderr, "failed to create image with size: %d x %d\n",
-			common_width, common_height);
-		return NULL;
-	}
+                double scale) {
+        struct grim_output *output, *single_output = NULL;
+        int n_buffers = 0;
+        wl_list_for_each(output, &state->outputs, link) {
+                if (output->buffer != NULL) {
+                        single_output = output;
+                        if (++n_buffers > 1) {
+                                break;
+                        }
+                }
+        }
 
-	struct grim_output *output;
-	wl_list_for_each(output, &state->outputs, link) {
+        int32_t scaled_width = lround(scale * geometry->width);
+        int32_t scaled_height = lround(scale * geometry->height);
+
+        if (n_buffers == 1 &&
+                        geometry->x == single_output->logical_geometry.x &&
+                        geometry->y == single_output->logical_geometry.y &&
+                        scaled_width == single_output->buffer->width &&
+                        scaled_height == single_output->buffer->height) {
+                pixman_format_code_t pixman_fmt =
+                        get_pixman_format(single_output->buffer->format);
+                if (!pixman_fmt) {
+                        fprintf(stderr, "unsupported format %d = 0x%08x\n",
+                                single_output->buffer->format,
+                                single_output->buffer->format);
+                        return NULL;
+                }
+                return pixman_image_create_bits(pixman_fmt,
+                        single_output->buffer->width,
+                        single_output->buffer->height,
+                        single_output->buffer->data,
+                        single_output->buffer->stride);
+        }
+
+        int common_width = scaled_width;
+        int common_height = scaled_height;
+        pixman_image_t *common_image = pixman_image_create_bits(PIXMAN_a8r8g8b8,
+                common_width, common_height, NULL, 0);
+        if (!common_image) {
+                fprintf(stderr, "failed to create image with size: %d x %d\n",
+                        common_width, common_height);
+                return NULL;
+        }
+
+        wl_list_for_each(output, &state->outputs, link) {
 		struct grim_buffer *buffer = output->buffer;
 		if (buffer == NULL) {
 			continue;
